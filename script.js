@@ -33,9 +33,6 @@ function onGot(item) {
       acc[key] = value;
       return acc;
     }, {});
-    console.log("'Put Site Domain in Tab Title': Successfuly obtained user preferences.");
-  } else {
-    console.log("'Put Site Domain in Tab Title': Couldn't get user preferences. Using default preferences.");
   }
 
   setTitle(); // The initial call
@@ -57,6 +54,11 @@ function itemInObject(item, object) {
 
 // Function to add prefix to tab title
 function setTitle() {
+  // If it's neither HTTP nor HTTPS
+  if (window.location.protocol != "http:" && window.location.protocol != "https:") {
+    return
+  }
+
   // The regex will cover `www.`, `ww1.`, `www2.`, etc. if they're in the nth
   // level domain, where n >= 3.
   var domain = window.location.hostname.replace(regex, "");
