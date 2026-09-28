@@ -70,7 +70,7 @@ jobs:
           npx --yes web-ext@8 build
           --source-dir .
           --artifacts-dir web-ext-artifacts
-          --filename "put-site-domain-in-tab-title-{version}.zip"
+          --filename "put-site-domain-in-tab-title-{version}.xpi"
           --ignore-files README.md web-ext-artifacts
 
       - name: Submit to addons.mozilla.org
@@ -93,7 +93,7 @@ jobs:
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
           RELEASE_VERSION: ${{ steps.tag.outputs.version }}
         run: |
-          package_name="put-site-domain-in-tab-title-$RELEASE_VERSION.zip"
+          package_name="put-site-domain-in-tab-title-$RELEASE_VERSION.xpi"
           gh release create "$RELEASE_TAG" "web-ext-artifacts/$package_name" \
             --verify-tag \
             --title "$RELEASE_TAG" \
