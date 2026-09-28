@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Put Site Domain in Tab Title",
-  "version": "2.1.0",
-  "description": "With this extension, tab titles will be prefixed with the domain name of the site open in it. The domain name will be enclosed in brackets and will appear before the actual title (i.e., the tab title of 'www.seas.upenn.edu' will be '[seas.upenn.edu] Penn Engineering | Inventing the Future'). The second-level domain will always be shown. However, whether or not the third-level (and nth-level) domain will be shown depends on the total length of the full domain name. The 'www' part will never be shown as a part of the domain name in the tab title (i.e., 'www.google.com' will appear as 'google.com').",
+  "version": "2.1.1",
+  "description": "Add the domain of a tab's site to the original tab title.",
   "content_scripts": [
     {
       "matches": [
@@ -21,7 +21,10 @@
   "browser_specific_settings": {
     "gecko": {
       "strict_min_version": "58.0",
-      "id": "{c61b9f5f-17b7-400f-8b93-b4c75d278eeb}"
+      "id": "{c61b9f5f-17b7-400f-8b93-b4c75d278eeb}",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
     }
   }
 }

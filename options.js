@@ -2,7 +2,7 @@
  * options.js
  *
  * @license MIT, https://opensource.org/license/mit
- * @version 2.1
+ * @version 2.1.1
  * @author  G.A. Jazali, dev@jazali.org
  * @updated 2026-09-28
  * @link    https://addons.mozilla.org/en-US/firefox/addon/put-site-domain-in-tab-title/
