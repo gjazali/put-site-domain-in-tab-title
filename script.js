@@ -2,84 +2,86 @@
  * script.js
  *
  * @license MIT, https://opensource.org/license/mit
- * @version 2.0
+ * @version 2.1
  * @author  G.A. Jazali, dev@jazali.org
- * @updated 2024-05-28
+ * @updated 2026-09-28
  * @link    https://addons.mozilla.org/en-US/firefox/addon/put-site-domain-in-tab-title/
  *
  */
 
 // Default preferences
-let regex = /ww[w\d]\d?\.(?=[^.]*\.[^.]*)/i;
+let wwwPrefixRegex = /^ww[w\d]\d?\.(?=[^.]*\.[^.]*)/i;
 let maxChar = 16;
 let prefixInsteadOfSuffix = true;
-let exceptions = { // The default exceptions
-  "colab.research.google.com": "Colab",
-  "mail.google.com": "Gmail",
-  "outlook.live.com": "Outlook"
-};
+const defaultExceptions = [
+  ["colab.research.google.com", "Colab"],
+  ["mail.google.com", "Gmail"],
+  ["outlook.live.com", "Outlook"]
+];
+let exceptions = new Map(defaultExceptions);
 
-// Functions to handle `Promise`
+let appliedLabel = null;
+let appliedAsPrefix = true;
+
 function onError(error) {
   console.log(`'Put Site Domain in Tab Title' Error: ${error}`);
 }
 
+function normalizeDomain(hostname) {
+  return hostname.trim().toLowerCase().replace(/\.$/, "")
+    .replace(wwwPrefixRegex, "");
+}
+
+function parseExceptions(exceptionsText) {
+  let parsedExceptions = new Map();
+
+  for (let line of exceptionsText.split(/\r?\n/)) {
+    let separatorIndex = line.indexOf("=");
+    if (separatorIndex === -1)
+      continue;
+
+    let exceptionDomain = normalizeDomain(line.slice(0, separatorIndex));
+    let exceptionLabel = line.slice(separatorIndex + 1).trim();
+    if (exceptionDomain && exceptionLabel)
+      parsedExceptions.set(exceptionDomain, exceptionLabel);
+  }
+
+  return parsedExceptions;
+}
+
 function onGot(item) {
-  // Exceptions
-  if (item.exceptions) {
-    exceptions = item.exceptions.split("\n");
-    exceptions = exceptions.map((x) => x.split("="));
-    exceptions = exceptions.reduce((acc, [key, value]) => {
-      acc[key] = value;
-      return acc;
-    }, {});
-  }
-
-  setTitle(); // The initial call
+  if (typeof item.exceptions === "string")
+    exceptions = parseExceptions(item.exceptions);
+  if (typeof item.domainAfterTitle === "boolean")
+    prefixInsteadOfSuffix = !item.domainAfterTitle;
 }
 
-// Function to determine whether an item is in an `Object` or not
-function itemInObject(item, object) {
-  try {
-    answer = item in object;
-  } catch(e) { // If the object is empty
-    if (e instanceof TypeError)
-      answer = false;
-    else
-      throw e
-  }
-
-  return answer
-}
-
-// Function to add prefix to tab title
 function setTitle() {
-  // If it's neither HTTP nor HTTPS
-  if (window.location.protocol != "http:" && window.location.protocol != "https:") {
-    return
+  if (window.location.protocol != "http:" &&
+      window.location.protocol != "https:") {
+    return;
   }
 
   // The regex will cover `www.`, `ww1.`, `www2.`, etc. if they're in the nth
-  // level domain, where n >= 3.
-  var domain = window.location.hostname.replace(regex, "");
+  // level domain, where n >= 3
+  let domain = normalizeDomain(window.location.hostname);
 
-  if (itemInObject(domain, exceptions)) {
-    domain = exceptions[domain];
-  } else {
-    if (domain.length >= maxChar) {
-      let domainParts = domain.split('.');
-      let shortenedDomain = domainParts.slice(-2).join('.');
+  if (exceptions.has(domain)) {
+    domain = exceptions.get(domain);
+  } else if (domain.length >= maxChar) {
+    let domainParts = domain.split('.');
+    let shortenedDomain = domainParts.slice(-2).join('.');
 
-      for (i = 3; i <= domainParts.length; i++) {
-        let newShortenedDomain = domainParts.slice(-i).join('.');
-        if (newShortenedDomain.length <= maxChar)
-          shortenedDomain = newShortenedDomain;
-      }
-
-      domain = shortenedDomain;
+    for (let partCount = 3; partCount <= domainParts.length; partCount++) {
+      let newShortenedDomain = domainParts.slice(-partCount).join('.');
+      if (newShortenedDomain.length > maxChar)
+        break;
+      shortenedDomain = newShortenedDomain;
     }
+
+    domain = shortenedDomain;
   }
-  var toAdd  = "[" + domain + "]";
+  let toAdd = "[" + domain + "]";
 
   if (prefixInsteadOfSuffix) {
     if (!document.title.startsWith(toAdd))
@@ -88,13 +90,60 @@ function setTitle() {
     if (!document.title.endsWith(toAdd))
       document.title = document.title + " " + toAdd;
   }
+
+  appliedLabel = toAdd;
+  appliedAsPrefix = prefixInsteadOfSuffix;
 }
 
-const exceptionsObtained = browser.storage.sync.get("exceptions");
-exceptionsObtained.then(onGot, onError);
+function removeAppliedLabel() {
+  if (appliedLabel === null)
+    return;
 
-var target = document.querySelector('head > title');
-var observer = new MutationObserver(function(mutations) {
+  let title = document.title;
+  if (appliedAsPrefix && title.startsWith(appliedLabel)) {
+    document.title = title.slice(appliedLabel.length).replace(/^ /, "");
+  } else if (!appliedAsPrefix && title.endsWith(appliedLabel)) {
+    document.title = title.slice(0, -appliedLabel.length).replace(/ $/, "");
+  }
+
+  appliedLabel = null;
+}
+
+function onStorageChanged(changes, areaName) {
+  if (areaName !== "sync")
+    return;
+  if (!("exceptions" in changes) && !("domainAfterTitle" in changes))
+    return;
+
+  removeAppliedLabel();
+
+  if ("exceptions" in changes) {
+    let newExceptions = changes.exceptions.newValue;
+    exceptions = typeof newExceptions === "string" ?
+      parseExceptions(newExceptions) : new Map(defaultExceptions);
+  }
+  if ("domainAfterTitle" in changes)
+    prefixInsteadOfSuffix = changes.domainAfterTitle.newValue !== true;
+
   setTitle();
-});
-observer.observe(target, { subtree: true, characterData: true, childList: true });
+}
+
+function startLabelingTitle() {
+  setTitle();
+  browser.storage.onChanged.addListener(onStorageChanged);
+
+  let observedNode = document.head || document.documentElement;
+  if (!observedNode)
+    return;
+
+  let observer = new MutationObserver(function() {
+    setTitle();
+  });
+  observer.observe(observedNode,
+    { subtree: true, characterData: true, childList: true });
+}
+
+// The observer starts after the preferences load
+browser.storage.sync.get(["exceptions", "domainAfterTitle"])
+  .then(onGot, onError)
+  .then(startLabelingTitle);

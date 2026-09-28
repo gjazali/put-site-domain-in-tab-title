@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - prod
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the pushed commit and its tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Find the tag that matches the manifest version
+        id: tag
+        run: |
+          manifest_version="$(jq -r .version manifest.json)"
+          commit_tags="$(git tag --points-at "$GITHUB_SHA")"
+          echo "Manifest version: $manifest_version"
+          echo "Tags on $GITHUB_SHA: ${commit_tags:-none}"
+
+          if [ -z "$commit_tags" ]; then
+            echo "The commit has no tag, so nothing is released."
+            exit 0
+          fi
+
+          # A tag counts only if it names the manifest version, with or
+          # without a leading `v`, so the release name always matches the
+          # version inside the package.
+          release_tag=""
+          for commit_tag in $commit_tags; do
+            if [ "$commit_tag" = "$manifest_version" ] ||
+               [ "$commit_tag" = "v$manifest_version" ]; then
+              release_tag="$commit_tag"
+            fi
+          done
+
+          if [ -z "$release_tag" ]; then
+            echo "::error::No tag on the commit matches manifest version" \
+              "$manifest_version. Tags found: $commit_tags"
+            exit 1
+          fi
+
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "version=$manifest_version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        if: steps.tag.outputs.tag != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build the extension package
+        if: steps.tag.outputs.tag != ''
+        run: >-
+          npx --yes web-ext@8 build
+          --source-dir .
+          --artifacts-dir web-ext-artifacts
+          --filename "put-site-domain-in-tab-title-{version}.zip"
+          --ignore-files README.md web-ext-artifacts
+
+      # Running this step again for an existing release replaces its package,
+      # so a failed AMO upload can be retried by rerunning the job.
+      - name: Publish to GitHub Releases
+        if: steps.tag.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          package_name="put-site-domain-in-tab-title-$RELEASE_VERSION.zip"
+          package_path="web-ext-artifacts/$package_name"
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$package_path" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$package_path" \
+              --verify-tag \
+              --title "$RELEASE_TAG" \
+              --generate-notes
+          fi
+
+      - name: Submit to addons.mozilla.org
+        if: steps.tag.outputs.tag != ''
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: >-
+          npx --yes web-ext@8 sign
+          --source-dir .
+          --artifacts-dir web-ext-artifacts
+          --ignore-files README.md web-ext-artifacts
+          --channel listed
+          --approval-timeout 0
